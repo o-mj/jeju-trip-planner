@@ -1,0 +1,426 @@
+
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <title>제주 여행 일정 플래너 DAW</title>
+  
+    <script src="https://openapi.map.naver.com/openapi/v3/maps.js?ncpClientId=f11s29gzi6"></script>
+    <style>
+    body { margin: 0; display: flex; height: 100vh; font-family: sans-serif; }
+    #sidebar { width: 320px; min-width: 240px; background: #f8f8f8; overflow: auto; padding: 16px; box-shadow: 2px 0 5px rgba(0,0,0,0.1); position: relative; }
+    #map { flex: 1; min-width: 200px; min-height: 200px; height: 100vh; position: relative; }
+    .input-group-row { display: flex; gap: 8px; margin-bottom: 10px; position: relative; }
+    .input-group-row input, .input-group-row select { flex: none; padding: 8px; border-radius: 6px; border: 1px solid #ccc; }
+    .button-group-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+    .input-group-row button, .button-group-row button { flex:none; padding: 8px; border: none; border-radius: 6px; background: #3399ff; color: white; font-weight: bold; cursor: pointer; height: 40px; white-space: nowrap; }
+  
+
+    .alt-button {
+  font-size: 8px;
+  padding: 4px 6px;
+  margin-left: 4px;
+  background-color: #e0f0ff !important;
+  border: 1px solid #b0c4d8 !important;
+  border-radius: 6px;
+  cursor: pointer;
+  color: #0077cc !important;
+  text-align: center;
+  line-height: 1.2;
+  min-width: 40px;
+  height: 40px;
+}
+.alt-button:hover {
+  background-color: #d0eaff !important;
+}
+.memo-text {
+  font-size: 0.85em;
+  color: #777;
+  margin-top: 2px;
+}
+    .schedule-item { position: relative; background: white; margin: 8px 0; padding: 10px; border-radius: 8px; box-shadow: 0 0 4px rgba(0,0,0,0.1); cursor: grab; }
+    .schedule-item.dragging { opacity: 0.5; }
+    .marker-pin {
+      width: 30px; height: 30px;
+      background: var(--pin-color, #007bff);
+      border-radius: 50% 50% 50% 0;
+      transform: rotate(-45deg);
+      position: relative;
+    }
+    .marker-pin::after {
+  content: '';
+  width: 12px;
+  height: 12px;
+  background: white;
+  border-radius: 50%;
+  position: absolute;
+  top: 9px;
+  left: 9px;
+  z-index: 1;
+  display: var(--dot-outline-display, block);  /* ✅ 추가 */
+}
+.control-panel {
+  position: absolute; top: 10px; right: 10px;
+  background: white; border: 1px solid #ccc;
+  padding: 10px; border-radius: 8px;
+  z-index: 1000;
+  font-size: 0.9em;
+  pointer-events: auto; /* ✅ 버튼 클릭 방해 방지 */
+}
+    /* ✅ 수납/펼침 버튼 스타일 */
+.control-panel button#panelToggleBtn {
+  width: 100%;
+  background: #007bff;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 12px;  
+  font-weight: bold;
+  cursor: pointer;
+  margin-bottom: 8px;
+}
+
+/* ✅ 내용 기본은 펼쳐짐 */
+.panel-content {
+  display: block;
+}
+    #saveSlots { margin-top: 10px; display: flex; justify-content: space-between; gap: 5px; }
+    .save-slot { flex: 1; text-align: center; padding: 5px 0; border-radius: 6px; background-color: #e0e0e0; cursor: pointer; font-weight: bold; }
+    .save-slot-view { margin: 10px 0; text-align: center; font-weight: bold; }
+    .save-slot {
+  position: relative; /* ✅ 꼭 추가되어야 ::after 작동함 */
+}
+
+ .save-slot.selected {
+  background-color: #007bff;
+  color: white;
+  border: none;
+  box-shadow: inset 0 -3px 0 #0056b3;
+}
+    #resizer { width: 5px; height: 100%; background: #ccc; cursor: ew-resize; position: absolute; top: 0; right: 0; }
+  </style>
+
+</head>
+<body>
+  <div id="sidebar">
+    <h2>🗓 일정 추가</h2>
+    <div class="input-group-row">
+      <input type="text" id="place" placeholder="방문지 입력" />
+      <button onclick="addSchedule()">추가</button>
+      <div id="place-suggestions" style="
+      position: absolute;
+      top: 100%;
+      left: 0;
+      z-index: 1000;
+      width: 100%;
+      display: none;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      background: #fff;
+      max-height: 150px;
+      overflow-y: auto;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+    "></div>
+      <button onclick="openAddressSearch()" class="alt-button">
+        <span style="display:block;">주소로</span>
+        <span style="display:block;">검색</span>
+      </button>
+       </div>
+       
+       <div id="address-search-box" style="display: none; margin-top: 8px; padding: 10px; border: 1px solid #ccc; border-radius: 8px; background-color: #f5faff;">
+        <input
+    type="text"
+    id="addressInput"
+    placeholder="주소를 입력하세요"
+     style="flex: 1; padding: 8px; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box;"
+  />
+  
+        <button
+          onclick="searchAddress()"
+          style="margin-top: 6px; padding: 6px 10px; background: #007bff; color: white; border: none; border-radius: 6px; cursor: pointer;"
+        >
+          검색
+        </button>
+      </div>
+    <div class="input-group-row">
+      <input type="text" id="duration" placeholder="메모" rows="1" />
+      
+    </div>
+    <div class="button-group-row">
+      <button onclick="resetSchedule()">전체 초기화</button>
+      <button onclick="saveToSlot()">💾 저장</button>
+      <button onclick="clearCurrentSlot()">🧹 슬롯 비우기</button>
+    </div>
+    <div id="saveSlots"></div>
+    <div id="slotView" style="text-align:center; margin-top:5px; font-weight:bold;"></div>    <div id="scheduleList" ondragover="event.preventDefault()"></div>
+    <div id="resizer"></div>
+  </div>
+  <div id="map" style="width: 100%; height: 100vh;"></div>
+
+<div class="control-panel"> 
+  <button id="panelToggleBtn">설정 ⬆</button>
+  <div class="panel-content">
+    <label><input type="checkbox" id="toggleLabels" checked /> 일정 이름 표시</label><br>
+    <label><input type="checkbox" id="toggleDots" /> 마커 점 표시</label><br>
+    <label><input type="checkbox" id="toggleMarker" checked /> 마커 표시</label>
+    <br><br>
+    <label><input type="checkbox" id="toggleDistance" checked /> 거리 표시</label>    <br><br>
+    <label for="lineColor">선 색상</label>
+    <select id="lineColor">
+      <option value="#3399ff">🔵</option>
+      <option value="#ff4d4d">🔴</option>
+      <option value="#ff9900">🟠</option>
+      <option value="#ffff66">🟡</option>
+      <option value="#66cc66">🟢</option>
+      <option value="#3399ff">🔵</option>
+    </select>
+    <label><input type="checkbox" id="toggleLine" checked /> 선 표시</label>
+    <br><br>
+<label for="markerColor">마커 색상</label>
+<select id="markerColor">
+  <option value="#ff4d4d">🔴</option>
+  <option value="#ff9900">🟠</option>
+  <option value="#ffff66">🟡</option>
+  <option value="#66cc66">🟢</option>
+  <option value="#3399ff">🔵</option>
+  <option value="#9966cc">🟣</option>
+</select>
+<label><input type="checkbox" id="toggleMarker" checked /> 마커 표시</label>
+  </div>
+</div>
+  </div>
+  <script>
+    let map;
+let scheduleData = [];
+let markers = [];
+let lines = [];
+let positions = [];
+let currentSlot = 0;
+window.onload = () => {
+  initMap();
+  initUIEvents();
+};
+
+function initMap() {
+  map = new naver.maps.Map('map', {
+    center: new naver.maps.LatLng(33.3617, 126.5292),
+    zoom: 9
+  });
+}
+
+function initUIEvents() {
+  // 자동완성은 현재 비활성화
+  document.getElementById("place").addEventListener("input", function () {
+  const keyword = this.value.trim();
+  const resultBox = document.getElementById("place-suggestions");
+
+  if (!keyword) {
+    resultBox.style.display = "none";
+    resultBox.innerHTML = "";
+    return;
+  }
+
+  fetch(`/search-place?query=${encodeURIComponent(keyword)}`)
+    .then(res => res.json())
+    .then(data => {
+      resultBox.innerHTML = "";
+
+      if (!data.addresses || data.addresses.length === 0) {
+        resultBox.style.display = "none";
+        return;
+      }
+
+      data.addresses.forEach(item => {
+        const btn = document.createElement("div");
+        btn.innerHTML = `
+          <div style="font-weight:bold;">${item.roadAddress || item.jibunAddress}</div>
+          <div style="font-size: 0.85em; color: #777;">${item.x}, ${item.y}</div>
+        `;
+        btn.style = `
+          padding: 8px;
+          cursor: pointer;
+          border-bottom: 1px solid #eee;
+        `;
+        btn.onmouseover = () => btn.style.background = "#f0f8ff";
+        btn.onmouseout = () => btn.style.background = "white";
+
+        btn.onclick = () => {
+          document.getElementById("place").value = item.roadAddress || item.jibunAddress;
+          resultBox.style.display = "none";
+          resultBox.innerHTML = "";
+
+          const fakeItem = {
+            place: item.roadAddress || item.jibunAddress,
+            duration: "",
+            lat: parseFloat(item.y),
+            lng: parseFloat(item.x),
+            color: document.getElementById("markerColor").value,
+            lineColor: document.getElementById("lineColor").value
+          };
+          addSchedule(true, fakeItem);
+        };
+
+        resultBox.appendChild(btn);
+      });
+
+      resultBox.style.display = "block";
+    })
+    .catch(() => {
+      resultBox.style.display = "none";
+    });
+});
+
+  document.getElementById("place").addEventListener("keydown", e => {
+    if (e.key === "Enter") addSchedule();
+  });
+
+  document.getElementById("duration").addEventListener("keydown", e => {
+    if (e.key === "Enter") addSchedule();
+  });
+
+  document.getElementById("lineColor").addEventListener("change", () => {
+    const newLineColor = document.getElementById("lineColor").value;
+    scheduleData.forEach(item => item.lineColor = newLineColor);
+    drawLines();
+  });
+}
+      
+    
+    function addSchedule(isLoad = false, item = null) {
+      const place = isLoad ? item.place : document.getElementById("place").value;
+      const duration = isLoad ? item.duration : document.getElementById("duration").value;
+      const color = isLoad ? item.color : (document.getElementById("markerColor").value || "#ff4d4d");
+      const lineColor = isLoad ? item.lineColor : document.getElementById("lineColor").value;
+    
+      if (!place) {
+        if (isLoad) return;
+        return alert("방문지를 입력해주세요.");
+      }
+    
+      function fetchAndPlace(lat, lng) {
+        const index = scheduleData.length + 1;
+        const marker = new naver.maps.Marker({
+  position: new naver.maps.LatLng(lat, lng),
+  map: map,
+  title: `${index}`
+});
+    
+        positions.push([lat, lng]);
+        scheduleData.push({ place, duration, lat, lng, color, lineColor });
+        markers.push(marker);
+    
+        const div = document.createElement('div');
+        div.className = 'schedule-item';
+        div.setAttribute('draggable', true);
+        div.id = `schedule-${index}`;
+        const converted = duration.replace(/\n/g, "<br>");
+        div.innerHTML = `<strong>${index}. ${place}</strong><div class='memo-text' id="memo-${index}" onclick="editMemo(${index})">${converted}</div>`;
+    
+        const delBtn = document.createElement("button");
+        delBtn.textContent = "삭제";
+        delBtn.style = "position:absolute; right:10px; top:10px; background:#ff6666; color:white; border:none; border-radius:4px; cursor:pointer;";
+       
+    
+        div.appendChild(delBtn);
+        document.getElementById("scheduleList").appendChild(div);
+        drawLines();
+      }
+    
+      fetch(`/search-place?query=${encodeURIComponent(place)}`)
+  .then(res => res.json())
+  .then(data => {
+    if (data.addresses && data.addresses.length > 0) {
+      const lat = parseFloat(data.addresses[0].y);
+      const lng = parseFloat(data.addresses[0].x);
+      fetchAndPlace(lat, lng);
+    } else {
+      alert("장소를 찾을 수 없습니다.");
+    }
+  })
+  .catch(() => {
+    alert("장소 검색 중 오류가 발생했습니다.");
+  });
+}
+
+    
+    
+    function drawLines() {
+  lines.forEach(l => l.setMap(null));
+  lines = [];
+
+  if (!document.getElementById("toggleLine").checked) return;
+  for (let i = 1; i < positions.length; i++) {
+    const linePath = [
+  new naver.maps.LatLng(positions[i-1][0], positions[i-1][1]),
+  new naver.maps.LatLng(positions[i][0], positions[i][1])
+];
+
+const polyline = new naver.maps.Polyline({
+  map: map,
+  path: linePath,
+  strokeWeight: 4,
+  strokeColor: scheduleData[i-1]?.lineColor || '#3399ff',
+  strokeOpacity: 0.8,
+  strokeStyle: 'solid'
+});
+lines.push(polyline);
+
+  // ✅ 거리 계산
+  const distance = getDistance(positions[i-1][0], positions[i-1][1], positions[i][0], positions[i][1]);
+  const distanceText = `${distance.toFixed(2)} km`;
+
+  const midLat = (positions[i-1][0] + positions[i][0]) / 2;
+const midLng = (positions[i-1][1] + positions[i][1]) / 2;
+
+if (document.getElementById("toggleDistance").checked) {
+  const htmlMarker = new naver.maps.Marker({
+    position: new naver.maps.LatLng(midLat, midLng),
+    map: map,
+    icon: {
+      content: `<div style="padding:2px 5px; background:white; border:1px solid #ccc; border-radius:4px; font-size:11px;">${distanceText}</div>`,
+      anchor: new naver.maps.Point(5, 10)
+    }
+  });
+
+  lines.push(htmlMarker);
+}
+}
+}
+function getDistance(lat1, lng1, lat2, lng2) {
+  function toRad(deg) {
+    return deg * Math.PI / 180;
+  }
+
+  const R = 6371; // 지구 반지름 (km)
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+
+  const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+            Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+            Math.sin(dLng/2) * Math.sin(dLng/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  const d = R * c;
+
+  return d; // km 단위 거리 반환
+}
+
+document.getElementById("toggleDots").addEventListener("change", e => {
+  const size = e.target.checked ? 12 : 30;
+  const root = document.documentElement;
+  root.style.setProperty('--dot-outline-display', e.target.checked ? 'none' : 'block');
+  markers.forEach((marker, idx) => {
+    const item = scheduleData[idx];
+    // L.divIcon 사용 제거됨 (Leaflet 비사용)
+  });
+});
+document.addEventListener("click", function (e) {
+  const suggestions = document.getElementById("place-suggestions");
+  const input = document.getElementById("place");
+  if (!suggestions.contains(e.target) && e.target !== input) {
+    suggestions.style.display = "none";
+  }
+});
+    
+    </script>
+</body>
+</html>
